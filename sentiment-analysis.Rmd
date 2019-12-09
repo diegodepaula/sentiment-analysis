@@ -1,0 +1,191 @@
+---
+title: "Sentiment Analysis"
+output: html_notebook
+---
+
+```{r}
+library(tidytext)
+library(tidyverse)
+library(ggjoy)
+library(spotifyr)
+library(plotly)
+```
+
+```{r}
+get_sentiments("nrc") %>% 
+  sample_n(10)
+```
+
+
+```{r}
+get_sentiments("afinn") %>% 
+  sample_n(10)
+```
+
+```{r}
+dim(get_sentiments("nrc"))
+dim(get_sentiments("afinn"))
+```
+
+```{r, message=FALSE}
+lyrics_2015 <- read_csv("https://raw.githubusercontent.com/reisanar/datasets/master/BB_top100_2015.csv")
+```
+
+```{r}
+head(lyrics_2015, 10)
+```
+ 
+
+```{r}
+convertSentiment <- function(sentiment) {
+  return(ifelse(sentiment == "sadness",
+          -4, ifelse(sentiment == "fear",
+          -3, ifelse(sentiment == "anger",
+          -2, ifelse(sentiment == "disgust",
+          -1, ifelse(sentiment == "anticipation",
+          1, ifelse(sentiment == "surprise",
+          2, ifelse(sentiment == "trust",
+          3, ifelse(sentiment == "joy",
+          4, ifelse(sentiment == "negative",
+          -1, ifelse(sentiment == "positive", 1, 0)))))))))))
+}
+```
+
+
+```{r}
+lyrics_2015 %>% 
+  filter( Rank %in% 1:10 ) %>% 
+  unnest_tokens(word, Lyrics) %>% 
+  filter(!word %in% stop_words$word, str_detect(word, "[a-z]+")) %>% 
+  group_by(Song) %>% 
+  mutate(index = row_number())
+```
+
+
+```{r}
+bb_top_10 <- lyrics_2015 %>% 
+  filter( Rank %in% 1:10 ) %>% 
+  unnest_tokens(word, Lyrics) %>% 
+  filter(!word %in% stop_words$word, str_detect(word, "[a-z]+")) %>% 
+  group_by(Song) %>% 
+  mutate(index = row_number())
+bb_top_10
+```
+
+```{r}
+
+
+top_bing <- bb_top_10 %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(Song, word, index, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+top_bing
+```
+
+```{r}
+bb_top_10 %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  count(Song, word, index, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative) %>% 
+  ggplot(aes(index, sentiment, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~Song, ncol = 2, scales = "free_x") + 
+  labs(title = "Sentiment Analysis of Songs using BING lexicon", 
+       subtitle = "Top 10 Billboard songs in 2015", 
+       x = "")
+```
+
+
+```{r}
+bb_top_10 %>% 
+  group_by(Song) %>% 
+  inner_join(get_sentiments("nrc"), by = "word") %>% 
+  mutate(score = convertSentiment(sentiment)) %>% 
+  ggplot() +
+  geom_col(aes(x = index, y = score, fill = score), show.legend = F) + 
+  facet_wrap(~Song, scales = "free_x", ncol = 2) + 
+  labs(title = "Sentiment Analysis of Songs using NRC lexicon", 
+       subtitle = "Top 10 Billboard songs in 2015", 
+       x = "")
+```
+
+```{r}
+bb_top_10 %>% 
+  group_by(Song) %>% 
+  inner_join(get_sentiments("afinn"), by = "word") %>% 
+  rename(score = value) %>% 
+  ggplot() +
+  geom_col(aes(x = index, y = score, fill = score), show.legend = F) + 
+  facet_wrap(~Song, scales = "free_x", ncol = 2) + 
+  labs(title = "Sentiment Analysis of Songs using AFINN lexicon", 
+       subtitle = "Top 10 Billboard songs in 2015", 
+       x = "")
+```
+
+```{r}
+bb_top_10 %>% 
+  filter(Rank <= 4) %>% 
+  group_by(Song) %>% 
+  inner_join(get_sentiments("nrc"), by = "word") %>% 
+  ggplot() +
+      geom_joy(aes(
+        x = index,
+        y = sentiment, 
+        fill = sentiment),
+        rel_min_height = 0.01,
+        alpha = 0.7,
+        scale = 3) + 
+      scale_fill_discrete(guide=FALSE)  + 
+  facet_wrap(~Song, scales = "free_x", ncol = 2) + 
+  labs(title = "Sentiment Analysis of Songs using AFINN lexicon", 
+       subtitle = "Top 10 Billboard songs in 2015", 
+       x = "")
+```
+
+```{r}
+Sys.setenv(SPOTIFY_CLIENT_ID = '************************')
+Sys.setenv(SPOTIFY_CLIENT_SECRET = '******************************')
+access_token <- get_spotify_access_token()
+access_token
+```
+
+```{r}
+top_10_spotify_info <- cbind(lyrics_2015[1:10,2],get_track_audio_features(id = 
+                              c('32OlwWuMpZ6b0aN2RZOeMS',
+                                '34gCuhDGsG4bRPIf9bb02f',
+                                '2JzZzZUQj3Qff7wapcbKjc',
+                                '2d8JP84HNLKhmd6IYOoupQ',
+                                '2iuZJX9X9P0GKaE93xcPjk',
+                                '0kzw2tRyuL9rzipi5ntlIy',
+                                '1kHEuJRasudLhjvnbfc4yS',
+                                '5RIVoVdkDLEygELLCniZFr',
+                                '4frLb7nWtsz2ymBE6k2GRP',
+                                '7fBv7CLKzipRk6EC6TWHOB')))
+
+```
+
+```{r, message=FALSE}
+plotly::plot_ly(top_10_spotify_info, x = top_10_spotify_info$valence, y = top_10_spotify_info$energy, color = top_10_spotify_info$Song) %>%
+  layout(shapes = list(list(
+    type = "line", 
+    y0 = 0, 
+    y1 = 1, 
+    x0 = .5, 
+    x1 = .5, 
+    line = list(color = 'black', width = 1)
+  ), list(
+    type = "line", 
+    x0 = 0, 
+    x1 = 1, 
+    y0 = .5, 
+    y1 = .5, 
+    line = list(color = 'black', width = 1)
+  )),
+       title = 'Spotify API top 10 analysis',
+       xaxis = list(title = "Valence", showgrid = TRUE),
+       yaxis = list(title = "Energy", showgrid = TRUE))
+```
+
+
